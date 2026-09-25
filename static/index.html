@@ -1,0 +1,619 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Splitter</title>
+<link rel="icon" href="data:,">
+<style>
+:root {
+  --bg: #f5f6f8; --card: #fff; --text: #1d2330; --muted: #6b7385; --line: #e2e5eb;
+  --accent: #2f6fed; --accent-text: #fff; --pos: #13854e; --neg: #c8322f;
+  --warn-bg: #fff6e0; --warn-line: #f0c75e; --err-bg: #fdecec;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171d; --card: #1d2129; --text: #e6e9ef; --muted: #9098a9; --line: #2e3440;
+    --accent: #5b8ef5; --pos: #43c381; --neg: #f06a67;
+    --warn-bg: #3a2f12; --warn-line: #8a6d1f; --err-bg: #3d1d1d;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+h1, h2, h3 { margin: 0 0 .6em; line-height: 1.2; }
+h2 { font-size: 1.15rem; }
+h3 { font-size: 1rem; }
+.wrap { max-width: 960px; margin: 0 auto; padding: 16px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; margin-bottom: 16px; }
+.muted { color: var(--muted); }
+.small { font-size: .87em; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.row > .grow { flex: 1 1 160px; min-width: 0; }
+.spread { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+label { display: block; font-size: .87em; color: var(--muted); margin: 10px 0 4px; }
+input, select { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; width: 100%; }
+input[type=checkbox], input[type=radio] { width: auto; }
+button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 7px; padding: 7px 13px; cursor: pointer; white-space: nowrap; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+button.danger { color: var(--neg); }
+button.link { border: none; background: none; color: var(--accent); padding: 2px 4px; }
+button.link.danger { color: var(--neg); }
+.error { background: var(--err-bg); color: var(--neg); border-radius: 7px; padding: 8px 10px; margin-top: 10px; }
+.error:empty { display: none; }
+.warn { background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 10px; }
+
+/* Landing */
+.hero { text-align: center; padding: 40px 0 24px; }
+.hero h1 { font-size: 2.2rem; }
+.landing { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.landing .card button { margin-top: 14px; width: 100%; }
+
+/* App */
+header.top { background: var(--card); border-bottom: 1px solid var(--line); }
+header.top .wrap { padding-top: 10px; padding-bottom: 0; }
+nav.tabs { display: flex; gap: 2px; overflow-x: auto; margin-top: 8px; }
+nav.tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--muted); padding: 8px 12px; }
+nav.tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; font-size: .85em; color: var(--muted); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pos { color: var(--pos); } .neg { color: var(--neg); }
+.list-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.list-item:last-child { border-bottom: none; }
+.chip { display: inline-block; font-size: .82em; border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; margin: 2px 3px 2px 0; }
+.chip.btn { cursor: pointer; background: var(--bg); }
+.chip.btn:hover { border-color: var(--accent); }
+.transfer { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.transfer:last-child { border-bottom: none; }
+.transfer .amt { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; }
+.empty { color: var(--muted); padding: 10px 0; }
+.ok { color: var(--pos); }
+
+/* Dialog */
+dialog { border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); color: var(--text); padding: 0; width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 32px); }
+dialog::backdrop { background: rgba(0,0,0,.45); }
+dialog form { padding: 18px; }
+.dialog-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+.dialog-actions .left { margin-right: auto; }
+.split-person { display: grid; grid-template-columns: 24px 1fr 130px; gap: 8px; align-items: center; padding: 4px 0; }
+.split-person input[type=text] { padding: 5px 8px; }
+.split-person .owed { text-align: right; font-size: .87em; }
+.payer-row { display: grid; grid-template-columns: 1fr 130px 32px; gap: 8px; margin-bottom: 6px; }
+.modes { display: flex; gap: 14px; flex-wrap: wrap; margin: 4px 0 8px; }
+.modes label { display: flex; gap: 5px; align-items: center; margin: 0; color: var(--text); font-size: 1em; }
+.checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 12px; margin-top: 4px; }
+.checks label { display: flex; gap: 6px; align-items: center; margin: 0; color: var(--text); font-size: 1em; }
+@media (max-width: 520px) {
+  .split-person { grid-template-columns: 24px 1fr 100px; }
+  .payer-row { grid-template-columns: 1fr 100px 32px; }
+  .hide-sm { display: none; }
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<dialog id="dlg"><form id="dlg-form" method="dialog"></form></dialog>
+
+<script>
+"use strict";
+
+// ---------------------------------------------------------------- utilities
+const $ = (sel, el = document) => el.querySelector(sel);
+const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const toCents = s => { const n = parseFloat(String(s).replace(",", ".")); return Number.isFinite(n) ? Math.round(n * 100) : NaN; };
+const fromCents = c => (c / 100).toFixed(2);
+function money(cents, cur) {
+  try { return new Intl.NumberFormat(undefined, { style: "currency", currency: cur }).format(cents / 100); }
+  catch { return `${fromCents(cents)} ${cur}`; }
+}
+const COMMON_CURRENCIES = ["EUR", "USD", "GBP", "DKK", "SEK", "NOK", "CHF", "PLN", "CZK", "HUF", "JPY", "CAD", "AUD", "THB"];
+
+let token = localStorage.getItem("splitter-token");
+let S = null;               // latest server state
+let tab = localStorage.getItem("splitter-tab") || "bills";
+
+async function api(method, path, body) {
+  const res = await fetch(path, {
+    method,
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (res.status === 401 && token) { logoutLocal(); throw new Error("Please log in again"); }
+  if (!res.ok) {
+    let msg = res.statusText;
+    try { msg = (await res.json()).error || msg; } catch {}
+    throw new Error(msg);
+  }
+  return res.status === 204 || res.status === 201 ? null : res.json();
+}
+
+const personName = id => S.persons.find(p => p.id === id)?.name ?? "?";
+const knownCurrencies = () => [S.base_currency, ...S.rates.map(r => r.code)];
+
+/** Currencies used in this splitter: most recent bills first, then the main currency and rated ones. */
+const recentCurrencies = () => [...new Set([...S.bills.map(b => b.currency), ...knownCurrencies()])];
+
+/**
+ * A currency <select>. `groups` is a list of [label, codes]; empty groups are skipped
+ * and codes already listed in an earlier group are not repeated. "Other…" asks for any code.
+ */
+function currencySelect(name, selected, groups, attrs = "") {
+  const seen = new Set();
+  const optgroups = groups.map(([label, codes]) => {
+    const fresh = codes.filter(c => !seen.has(c) && seen.add(c));
+    return fresh.length ? `<optgroup label="${esc(label)}">${fresh.map(c => `<option ${c === selected ? "selected" : ""}>${esc(c)}</option>`).join("")}</optgroup>` : "";
+  }).join("");
+  const extra = selected && !seen.has(selected) ? `<option selected>${esc(selected)}</option>` : "";
+  return `<select name="${name}" data-currency ${attrs}>${extra}${optgroups}<option value="__other">Other…</option></select>`;
+}
+
+// Let "Other…" in any currency select prompt for a code.
+document.addEventListener("change", e => {
+  const sel = e.target;
+  if (!sel.matches?.("select[data-currency]") || sel.value !== "__other") return;
+  const code = (prompt("3-letter currency code, e.g. ISK") || "").trim().toUpperCase();
+  if (/^[A-Z]{3}$/.test(code)) {
+    if (![...sel.options].some(o => o.value === code)) sel.insertAdjacentHTML("afterbegin", `<option>${code}</option>`);
+    sel.value = code;
+  } else {
+    sel.selectedIndex = 0;
+    if (code) alert("Please enter a 3-letter code like ISK");
+  }
+  sel.dispatchEvent(new Event("input", { bubbles: true }));
+}, true);
+
+// ------------------------------------------------------------------ landing
+function renderLanding(err = {}) {
+  $("#root").innerHTML = `
+  <div class="wrap">
+    <div class="hero">
+      <h1>Splitter</h1>
+      <p class="muted">Split trip expenses with friends: who paid what, who owes whom.</p>
+    </div>
+    <div class="landing">
+      <form class="card" id="join">
+        <h2>Join existing Splitter</h2>
+        <p class="muted small">Ask your friends for the splitter's name and password.</p>
+        <label>Splitter name</label><input name="name" required autocomplete="username">
+        <label>Password</label><input name="password" type="password" required autocomplete="current-password">
+        <button class="primary">Join</button>
+        <div class="error">${esc(err.join)}</div>
+      </form>
+      <form class="card" id="create">
+        <h2>Create Splitter</h2>
+        <p class="muted small">Pick a name and password to share with your group.</p>
+        <label>Splitter name</label><input name="name" required placeholder="e.g. Lisbon 2026" autocomplete="off">
+        <label>Password</label><input name="password" type="password" required minlength="6" autocomplete="new-password">
+        <label>Repeat password</label><input name="password2" type="password" required autocomplete="new-password">
+        <label>Main currency</label>
+        ${currencySelect("base", "EUR", [["Common currencies", COMMON_CURRENCIES]])}
+        <button class="primary">Create</button>
+        <div class="error">${esc(err.create)}</div>
+      </form>
+    </div>
+  </div>`;
+
+  $("#join").onsubmit = async e => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    try {
+      token = (await api("POST", "/api/login", { name: f.get("name"), password: f.get("password") })).token;
+      localStorage.setItem("splitter-token", token);
+      await refresh();
+    } catch (ex) { $(".error", e.target).textContent = ex.message; }
+  };
+  $("#create").onsubmit = async e => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    if (f.get("password") !== f.get("password2")) { $(".error", e.target).textContent = "Passwords don't match"; return; }
+    try {
+      token = (await api("POST", "/api/splitters", { name: f.get("name"), password: f.get("password"), base_currency: f.get("base") })).token;
+      localStorage.setItem("splitter-token", token);
+      tab = "people";
+      await refresh();
+    } catch (ex) { $(".error", e.target).textContent = ex.message; }
+  };
+}
+
+function logoutLocal() {
+  token = null; S = null;
+  localStorage.removeItem("splitter-token");
+  renderLanding();
+}
+
+async function logout() {
+  try { await api("POST", "/api/logout"); } catch {}
+  logoutLocal();
+}
+
+// ---------------------------------------------------------------------- app
+async function refresh() {
+  S = await api("GET", "/api/state");
+  renderApp();
+}
+
+/** Run a mutation, then reload state; show errors with alert(). */
+async function act(fn) {
+  try { await fn(); await refresh(); }
+  catch (ex) { alert(ex.message); }
+}
+
+const TABS = [["bills", "Bills"], ["settle", "Settle up"], ["people", "People & groups"], ["payments", "Payment methods"], ["currencies", "Currencies"]];
+
+function setTab(t) { tab = t; localStorage.setItem("splitter-tab", t); renderApp(); }
+
+function renderApp() {
+  const warnings = S.summary.warnings.map(w => `<div class="warn">⚠️ ${esc(w)}</div>`).join("");
+  $("#root").innerHTML = `
+  <header class="top"><div class="wrap">
+    <div class="spread">
+      <div><h1 style="margin:0;font-size:1.35rem">${esc(S.name)}</h1>
+        <span class="muted small">Main currency ${esc(S.base_currency)} · ${S.persons.length} people · ${S.bills.length} bills</span></div>
+      <button onclick="logout()">Log out</button>
+    </div>
+    <nav class="tabs">${TABS.map(([k, l]) => `<button class="${k === tab ? "active" : ""}" onclick="setTab('${k}')">${l}</button>`).join("")}</nav>
+  </div></header>
+  <main class="wrap">${warnings}${({ bills: viewBills, settle: viewSettle, people: viewPeople, payments: viewPayments, currencies: viewCurrencies }[tab] || viewBills)()}</main>`;
+}
+
+// ---------------------------------------------------------------- bills tab
+function viewBills() {
+  if (!S.persons.length) {
+    return `<div class="card"><h2>Welcome!</h2><p>Start by adding the people on the trip.</p>
+      <button class="primary" onclick="setTab('people')">Add people</button></div>`;
+  }
+  const rows = S.bills.map(b => {
+    const payers = b.payers.map(p => esc(personName(p.person_id))).join(", ");
+    const split = b.shares.length === S.persons.length ? "everyone" : b.shares.map(s => esc(personName(s.person_id))).join(", ");
+    return `<tr>
+      <td><strong>${esc(b.description)}</strong><div class="muted small">${esc(b.date || "")} ${b.split_mode !== "equal" ? `· split ${b.split_mode === "shares" ? "by shares" : "by amounts"}` : ""}</div></td>
+      <td class="hide-sm">${payers}</td>
+      <td class="hide-sm small">${split}</td>
+      <td class="num">${money(b.total, b.currency)}</td>
+      <td class="num"><button class="link" onclick="billDialog(${b.id})">Edit</button></td>
+    </tr>`;
+  }).join("");
+  const totalBase = S.summary.balances.reduce((a, b) => a + b.owed, 0);
+  return `<div class="card">
+    <div class="spread"><h2>Bills</h2><button class="primary" onclick="billDialog()">+ Add bill</button></div>
+    ${S.bills.length ? `<table><thead><tr><th>What</th><th class="hide-sm">Paid by</th><th class="hide-sm">Split between</th><th class="num">Amount</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="muted small">Total spent: ${money(totalBase, S.base_currency)}</p>`
+      : `<p class="empty">No bills yet.</p>`}
+  </div>`;
+}
+
+function billDialog(id) {
+  const bill = id ? S.bills.find(b => b.id === id) : null;
+  const cur = bill?.currency || S.bills[0]?.currency || S.base_currency;
+  const mode = bill?.split_mode || "equal";
+  const shareMap = new Map((bill?.shares || S.persons.map(p => ({ person_id: p.id, weight: 1 }))).map(s => [s.person_id, s]));
+  const payers = bill?.payers.length ? bill.payers : [{ person_id: S.persons[0].id, amount: null }];
+  const personOptions = sel => S.persons.map(p => `<option value="${p.id}" ${p.id === sel ? "selected" : ""}>${esc(p.name)}</option>`).join("");
+  const payerRow = p => `<div class="payer-row">
+      <select name="payer">${personOptions(p.person_id)}</select>
+      <input type="text" inputmode="decimal" name="paid" placeholder="0.00" value="${p.amount != null ? fromCents(p.amount) : ""}">
+      <button type="button" class="link danger" title="Remove" onclick="this.parentElement.remove(); updateSplitPreview()">✕</button>
+    </div>`;
+  const groupChips = [`<span class="chip btn" data-group="all">Everyone</span>`, `<span class="chip btn" data-group="none">Nobody</span>`,
+    ...S.groups.map(g => `<span class="chip btn" data-group="${g.id}">${esc(g.name)}</span>`)].join("");
+
+  openDialog(`
+    <h2>${bill ? "Edit bill" : "New bill"}</h2>
+    <div class="row">
+      <div class="grow"><label>Description</label><input name="description" required value="${esc(bill?.description)}" placeholder="Dinner, tickets, …"></div>
+      <div style="width:150px"><label>Date</label><input type="date" name="date" value="${esc(bill?.date || new Date().toISOString().slice(0, 10))}"></div>
+      <div style="width:110px"><label>Currency</label>${currencySelect("currency", cur, [["Used in this splitter", recentCurrencies()], ["Other currencies", COMMON_CURRENCIES]])}</div>
+    </div>
+
+    <label>Paid by</label>
+    <div id="payers">${payers.map(payerRow).join("")}</div>
+    <button type="button" class="link" id="add-payer">+ another payer</button>
+
+    <label>Split</label>
+    <div class="modes">
+      ${[["equal", "Equally"], ["shares", "By shares"], ["exact", "By exact amounts"]].map(([k, l]) =>
+        `<label><input type="radio" name="mode" value="${k}" ${k === mode ? "checked" : ""}> ${l}</label>`).join("")}
+    </div>
+    <div class="small muted">Quick select: ${groupChips}</div>
+    <div id="split-people" style="margin-top:6px">
+      ${S.persons.map(p => {
+        const s = shareMap.get(p.id);
+        const v = !s ? "" : mode === "exact" ? fromCents(s.owed) : mode === "shares" ? s.weight : "1";
+        return `<div class="split-person" data-id="${p.id}">
+          <input type="checkbox" ${s ? "checked" : ""}>
+          <span>${esc(p.name)} <span class="owed muted" data-owed></span></span>
+          <input type="text" inputmode="decimal" data-value value="${esc(v)}">
+        </div>`;
+      }).join("")}
+    </div>
+    <div id="split-status" class="small muted" style="margin-top:6px"></div>
+    <p class="muted small">Tip: to record a repayment (e.g. Anna paid Ben back), add a bill paid by Anna and split by exact amount to Ben.</p>
+    <div class="error" id="dlg-error"></div>
+    <div class="dialog-actions">
+      ${bill ? `<button type="button" class="danger left" id="del">Delete</button>` : ""}
+      <button type="button" onclick="closeDialog()">Cancel</button>
+      <button class="primary">Save</button>
+    </div>`);
+
+  const form = $("#dlg-form");
+  $("#add-payer").onclick = () => {
+    $("#payers").insertAdjacentHTML("beforeend", payerRow({ person_id: S.persons[0].id, amount: null }));
+  };
+  $$("[data-group]", form).forEach(chip => chip.onclick = () => {
+    const g = chip.dataset.group;
+    const members = g === "all" ? S.persons.map(p => p.id) : g === "none" ? [] : S.groups.find(x => x.id === +g).member_ids;
+    $$(".split-person", form).forEach(row => { $("input[type=checkbox]", row).checked = members.includes(+row.dataset.id); });
+    updateSplitPreview();
+  });
+  $$("input[name=mode]", form).forEach(r => r.onchange = () => {
+    // Reset values to sensible defaults for the new mode.
+    const m = form.mode.value;
+    $$(".split-person [data-value]", form).forEach(inp => { inp.value = m === "shares" ? "1" : ""; });
+    updateSplitPreview();
+  });
+  form.oninput = updateSplitPreview;
+  updateSplitPreview();
+
+  if (bill) $("#del").onclick = () => {
+    if (!confirm(`Delete "${bill.description}"?`)) return;
+    closeDialog();
+    act(() => api("DELETE", `/api/bills/${bill.id}`));
+  };
+
+  form.onsubmit = async e => {
+    e.preventDefault();
+    try {
+      const body = readBillForm();
+      await api(bill ? "PUT" : "POST", bill ? `/api/bills/${bill.id}` : "/api/bills", body);
+      closeDialog();
+      await refresh();
+    } catch (ex) { $("#dlg-error").textContent = ex.message; }
+  };
+}
+
+function readBillForm() {
+  const form = $("#dlg-form");
+  const mode = form.mode.value;
+  const payers = $$(".payer-row", form).map(r => ({ person_id: +$("select", r).value, amount: toCents($("input", r).value || "0") }));
+  if (payers.some(p => Number.isNaN(p.amount))) throw new Error("Paid amounts must be numbers");
+  const shares = $$(".split-person", form).filter(r => $("input[type=checkbox]", r).checked).map(r => {
+    const raw = $("[data-value]", r).value;
+    let value = 1;
+    if (mode === "shares") value = parseFloat(String(raw).replace(",", "."));
+    if (mode === "exact") value = toCents(raw || "0");
+    if (Number.isNaN(value)) throw new Error(`Invalid value for ${personName(+r.dataset.id)}`);
+    return { person_id: +r.dataset.id, value };
+  });
+  return {
+    description: form.description.value,
+    currency: form.currency.value.toUpperCase(),
+    date: form.date.value || null,
+    payers, split_mode: mode, shares,
+  };
+}
+
+/** Live preview of what each person owes in the bill dialog. */
+function updateSplitPreview() {
+  const form = $("#dlg-form");
+  if (!form.mode) return;
+  const mode = form.mode.value;
+  const cur = (form.currency.value || S.base_currency).toUpperCase();
+  const total = $$(".payer-row input", form).reduce((a, i) => a + (toCents(i.value || "0") || 0), 0);
+  const rows = $$(".split-person", form);
+  rows.forEach(r => {
+    const on = $("input[type=checkbox]", r).checked;
+    const v = $("[data-value]", r);
+    v.style.visibility = on && mode !== "equal" ? "visible" : "hidden";
+    v.placeholder = mode === "exact" ? "0.00" : "1";
+  });
+  const active = rows.filter(r => $("input[type=checkbox]", r).checked);
+  const weights = active.map(r => mode === "equal" ? 1 : mode === "shares" ? (parseFloat($("[data-value]", r).value.replace(",", ".")) || 0) : (toCents($("[data-value]", r).value || "0") || 0));
+  const wsum = weights.reduce((a, b) => a + b, 0);
+  rows.forEach(r => $("[data-owed]", r).textContent = "");
+  active.forEach((r, i) => {
+    const owed = mode === "exact" ? weights[i] : wsum > 0 ? Math.round(total * weights[i] / wsum) : 0;
+    if (total > 0) $("[data-owed]", r).textContent = `· ${money(owed, cur)}`;
+  });
+  let status = `Total ${money(total, cur)}`;
+  if (mode === "exact") {
+    const left = total - wsum;
+    status += left === 0 ? " · amounts add up ✓" : ` · ${money(Math.abs(left), cur)} ${left > 0 ? "left to assign" : "too much assigned"}`;
+  }
+  $("#split-status").textContent = status;
+}
+
+// --------------------------------------------------------------- settle tab
+function viewSettle() {
+  const cur = S.base_currency;
+  const sm = S.summary;
+  const balRows = sm.balances.map(b => `<tr>
+      <td>${esc(personName(b.person_id))}</td>
+      <td class="num">${money(b.paid, cur)}</td>
+      <td class="num">${money(b.owed, cur)}</td>
+      <td class="num ${b.net > 0 ? "pos" : b.net < 0 ? "neg" : ""}">${b.net > 0 ? "+" : ""}${money(b.net, cur)}</td>
+    </tr>`).join("");
+  const transfers = sm.transfers.map(t => `<div class="transfer">
+      <strong>${esc(personName(t.from))}</strong> <span class="muted">pays</span> <strong>${esc(personName(t.to))}</strong>
+      ${t.methods.map(m => `<span class="chip">${esc(m)}</span>`).join("")}
+      <span class="amt">${money(t.amount, cur)}</span>
+    </div>`).join("");
+  const unsettled = sm.unsettled.length ? `<div class="warn">These balances can't be settled with the current payment methods:
+      ${sm.unsettled.map(u => `${esc(personName(u.person_id))} (${money(u.net, cur)})`).join(", ")}</div>` : "";
+  return `
+  <div class="card">
+    <h2>Who pays whom</h2>
+    ${unsettled}
+    ${transfers || `<p class="empty">${S.bills.length ? "Everyone is square. 🎉" : "Add some bills first."}</p>`}
+    ${S.rates.length ? `<p class="muted small">All amounts converted to ${esc(cur)} using the rates under Currencies.</p>` : ""}
+  </div>
+  <div class="card">
+    <h2>Balances</h2>
+    <table><thead><tr><th>Person</th><th class="num">Paid</th><th class="num">Spent</th><th class="num">Balance</th></tr></thead>
+    <tbody>${balRows}</tbody></table>
+    <p class="muted small">Paid: what the person paid out of pocket. Spent: their part of the bills, i.e. what the trip cost them. Balance = paid − spent; positive gets money back, negative owes money.</p>
+  </div>`;
+}
+
+// --------------------------------------------------------------- people tab
+function viewPeople() {
+  const people = S.persons.map(p => `<div class="list-item">
+      <span>${esc(p.name)}</span>
+      <span><button class="link" onclick="renamePerson(${p.id})">Rename</button><button class="link danger" onclick="deletePerson(${p.id})">Delete</button></span>
+    </div>`).join("");
+  const groups = S.groups.map(g => `<div class="list-item">
+      <div><strong>${esc(g.name)}</strong><div>${g.member_ids.map(id => `<span class="chip">${esc(personName(id))}</span>`).join("") || `<span class="muted small">no members</span>`}</div></div>
+      <span><button class="link" onclick="setDialog('groups', ${g.id})">Edit</button><button class="link danger" onclick="deleteSet('groups', ${g.id})">Delete</button></span>
+    </div>`).join("");
+  return `
+  <div class="card">
+    <h2>People</h2>
+    <form class="row" id="add-person" onsubmit="addPerson(event)">
+      <input class="grow" name="name" placeholder="Name" required autocomplete="off"><button class="primary">Add</button>
+    </form>
+    <div style="margin-top:8px">${people || `<p class="empty">No one yet.</p>`}</div>
+  </div>
+  <div class="card">
+    <div class="spread"><h2>Groups</h2><button onclick="setDialog('groups')" ${S.persons.length ? "" : "disabled"}>+ New group</button></div>
+    <p class="muted small">Groups are shortcuts for picking who shares a bill, e.g. "Car 1" or "Apartment A".</p>
+    ${groups || `<p class="empty">No groups yet.</p>`}
+  </div>`;
+}
+
+function addPerson(e) {
+  e.preventDefault();
+  const name = e.target.name.value;
+  act(async () => { await api("POST", "/api/persons", { name }); }).then(() => $("#add-person input")?.focus());
+}
+function renamePerson(id) {
+  const name = prompt("New name", personName(id));
+  if (name) act(() => api("PUT", `/api/persons/${id}`, { name }));
+}
+function deletePerson(id) {
+  if (confirm(`Remove ${personName(id)}?`)) act(() => api("DELETE", `/api/persons/${id}`));
+}
+
+// ------------------------------------------ groups & payment methods dialog
+const SET_KINDS = {
+  groups: { title: "group", placeholder: "e.g. Car 1", list: () => S.groups },
+  methods: { title: "payment method", placeholder: "e.g. MobilePay, Revolut, PayPal", list: () => S.methods },
+};
+
+function setDialog(kind, id) {
+  const k = SET_KINDS[kind];
+  const set = id ? k.list().find(s => s.id === id) : null;
+  openDialog(`
+    <h2>${set ? "Edit" : "New"} ${k.title}</h2>
+    <label>Name</label><input name="name" required value="${esc(set?.name)}" placeholder="${esc(k.placeholder)}">
+    <label>Members</label>
+    <div class="checks">${S.persons.map(p => `<label><input type="checkbox" value="${p.id}" ${set?.member_ids.includes(p.id) ? "checked" : ""}> ${esc(p.name)}</label>`).join("")}</div>
+    <div class="error" id="dlg-error"></div>
+    <div class="dialog-actions">
+      <button type="button" onclick="closeDialog()">Cancel</button>
+      <button class="primary">Save</button>
+    </div>`);
+  $("#dlg-form").onsubmit = async e => {
+    e.preventDefault();
+    const body = { name: e.target.name.value, member_ids: $$(".checks input:checked", e.target).map(i => +i.value) };
+    try {
+      await api(set ? "PUT" : "POST", set ? `/api/${kind}/${set.id}` : `/api/${kind}`, body);
+      closeDialog();
+      await refresh();
+    } catch (ex) { $("#dlg-error").textContent = ex.message; }
+  };
+}
+
+function deleteSet(kind, id) {
+  const set = SET_KINDS[kind].list().find(s => s.id === id);
+  if (confirm(`Delete ${SET_KINDS[kind].title} "${set.name}"?`)) act(() => api("DELETE", `/api/${kind}/${id}`));
+}
+
+// ------------------------------------------------------------- payments tab
+function viewPayments() {
+  const sm = S.summary;
+  const methods = S.methods.map(m => `<div class="list-item">
+      <div><strong>${esc(m.name)}</strong><div>${m.member_ids.map(id => `<span class="chip">${esc(personName(id))}</span>`).join("") || `<span class="muted small">no members</span>`}</div></div>
+      <span><button class="link" onclick="setDialog('methods', ${m.id})">Edit</button><button class="link danger" onclick="deleteSet('methods', ${m.id})">Delete</button></span>
+    </div>`).join("");
+  let status;
+  if (!S.methods.length) status = `<p class="ok">No payment methods defined, so everyone is assumed to be able to pay everyone.</p>`;
+  else if (!sm.components.length) status = `<p class="ok">✓ Everyone can reach everyone (possibly through someone else).</p>`;
+  else status = `<div class="warn"><strong>Not connected.</strong> These groups can't send money to each other:
+      ${sm.components.map((c, i) => `<div>Group ${i + 1}: ${c.map(id => `<span class="chip">${esc(personName(id))}</span>`).join("")}</div>`).join("")}
+      Add people to a shared payment method so all groups are linked.</div>`;
+  const unused = S.methods.length ? S.persons.filter(p => !S.methods.some(m => m.member_ids.includes(p.id))) : [];
+  return `
+  <div class="card">
+    <div class="spread"><h2>Payment methods</h2><button onclick="setDialog('methods')" ${S.persons.length ? "" : "disabled"}>+ New method</button></div>
+    <p class="muted small">Two people can transfer money to each other if they share at least one payment method.
+      When a debtor can't pay a creditor directly, the settlement routes the money through someone who can.</p>
+    ${status}
+    ${unused.length ? `<p class="small">Not in any method: ${unused.map(p => `<span class="chip">${esc(p.name)}</span>`).join("")}</p>` : ""}
+    ${methods}
+  </div>`;
+}
+
+// ----------------------------------------------------------- currencies tab
+function viewCurrencies() {
+  const base = S.base_currency;
+  const used = [...new Set(S.bills.map(b => b.currency))].filter(c => c !== base && !S.rates.some(r => r.code === c));
+  const rows = S.rates.map(r => `<div class="list-item">
+      <span>1 <strong>${esc(r.code)}</strong> = </span>
+      <form class="row" style="flex:1" onsubmit="saveRate(event, '${esc(r.code)}')">
+        <input class="grow" name="rate" inputmode="decimal" value="${+r.rate.toPrecision(6)}"> <span>${esc(base)}</span>
+        <button>Save</button><button type="button" class="link danger" onclick="deleteRate('${esc(r.code)}')">Remove</button>
+      </form>
+    </div>`).join("");
+  return `
+  <div class="card">
+    <h2>Main currency</h2>
+    <p class="muted small">Balances and settlements are calculated in the main currency.</p>
+    <form class="row" onsubmit="changeBase(event)">
+      <div class="grow">${currencySelect("base", base, [["Currencies with a rate", knownCurrencies()], ["Other currencies", COMMON_CURRENCIES]])}</div><button>Change</button>
+    </form>
+  </div>
+  <div class="card">
+    <h2>Exchange rates</h2>
+    ${used.length ? `<div class="warn">Bills use ${used.map(esc).join(", ")} but no rate is set.</div>` : ""}
+    ${rows || `<p class="empty">Only ${esc(base)} so far.</p>`}
+    <h3 style="margin-top:16px">Add currency</h3>
+    <form class="row" onsubmit="saveRate(event)">
+      <span>1</span>${currencySelect("code", used[0], [["Used in bills, no rate yet", used], ["Common currencies", COMMON_CURRENCIES.filter(c => !knownCurrencies().includes(c))]], 'style="width:110px"')}
+      <span>=</span><input class="grow" name="rate" inputmode="decimal" placeholder="rate" required><span>${esc(base)}</span>
+      <button class="primary">Add</button>
+    </form>
+  </div>`;
+}
+
+function saveRate(e, code) {
+  e.preventDefault();
+  code = code || e.target.code.value.toUpperCase();
+  const rate = parseFloat(e.target.rate.value.replace(",", "."));
+  act(() => api("PUT", `/api/rates/${encodeURIComponent(code)}`, { rate }));
+}
+function deleteRate(code) {
+  if (confirm(`Remove the rate for ${code}?`)) act(() => api("DELETE", `/api/rates/${encodeURIComponent(code)}`));
+}
+function changeBase(e) {
+  e.preventDefault();
+  act(() => api("PUT", "/api/settings", { base_currency: e.target.base.value.toUpperCase() }));
+}
+
+// ------------------------------------------------------------------- dialog
+function openDialog(html) {
+  $("#dlg-form").innerHTML = html;
+  $("#dlg-form").oninput = null;
+  $("#dlg").showModal();
+  $("#dlg-form input:not([type=hidden])")?.focus();
+}
+function closeDialog() { $("#dlg").close(); }
+
+// --------------------------------------------------------------------- boot
+if (token) refresh().catch(() => logoutLocal()); else renderLanding();
+</script>
+</body>
+</html>
