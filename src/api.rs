@@ -37,9 +37,13 @@ pub fn router(state: AppState) -> Router {
         .route("/", get(|| async { Html(INDEX_HTML) }))
         .route("/api/splitters", post(create_splitter))
         .route("/api/login", post(login))
+        .route("/api/join", post(join))
         .route("/api/logout", post(logout))
         .route("/api/state", get(get_state))
         .route("/api/settings", put(update_settings))
+        .route("/api/splitter/name", put(rename_splitter))
+        .route("/api/splitter/password", put(change_password))
+        .route("/api/splitter/invite", get(get_invite))
         .route("/api/persons", post(add_person))
         .route("/api/persons/{id}", put(rename_person).delete(delete_person))
         .route("/api/groups", post(add_group))
@@ -166,27 +170,16 @@ async fn create_splitter(
     Json(req): Json<CreateSplitter>,
 ) -> ApiResult<Json<TokenResponse>> {
     let name = clean_name(&req.name, "Splitter name")?;
-    if req.password.chars().count() < 6 {
-        return Err(bad("Password must be at least 6 characters"));
-    }
+    check_password(&req.password)?;
     let base = currency_code(&req.base_currency)?;
-    let password = req.password;
-    let hash = tokio::task::spawn_blocking(move || {
-        Argon2::default().hash_password(password.as_bytes()).map(|h| h.to_string())
-    })
-    .await
-    .map_err(|_| bad("Hashing failed"))?
-    .map_err(|_| bad("Hashing failed"))?;
+    let hash = hash_password(req.password).await?;
 
     let conn = st.db();
     conn.execute(
         "INSERT INTO splitters (name, password_hash, base_currency) VALUES (?1, ?2, ?3)",
         params![name, hash, base],
     )
-    .map_err(|e| match AppError::from(e) {
-        AppError(StatusCode::CONFLICT, _) => conflict("A splitter with that name already exists"),
-        other => other,
-    })?;
+    .map_err(name_taken)?;
     let token = create_session(&conn, conn.last_insert_rowid())?;
     Ok(Json(TokenResponse { token }))
 }
@@ -202,23 +195,125 @@ async fn login(State(st): State<AppState>, Json(req): Json<Login>) -> ApiResult<
         .optional()?;
     let wrong = || unauthorized("Wrong splitter name or password");
     let (id, hash) = row.ok_or_else(wrong)?;
-    let password = req.password;
-    let ok = tokio::task::spawn_blocking(move || {
-        PasswordHash::new(&hash)
-            .map(|h| Argon2::default().verify_password(password.as_bytes(), &h).is_ok())
-            .unwrap_or(false)
-    })
-    .await
-    .unwrap_or(false);
-    if !ok {
+    if !verify_password(req.password, hash).await {
         return Err(wrong());
     }
     let token = create_session(&st.db(), id)?;
     Ok(Json(TokenResponse { token }))
 }
 
+#[derive(Deserialize)]
+struct Join {
+    invite: String,
+}
+
+async fn join(State(st): State<AppState>, Json(req): Json<Join>) -> ApiResult<Json<TokenResponse>> {
+    let conn = st.db();
+    let id: i64 = conn
+        .query_row("SELECT splitter_id FROM invites WHERE token = ?1", [&req.invite], |r| r.get(0))
+        .optional()?
+        .ok_or_else(|| unauthorized("This invite link is no longer valid"))?;
+    let token = create_session(&conn, id)?;
+    Ok(Json(TokenResponse { token }))
+}
+
+/// The splitter's invite token, created on first request.
+async fn get_invite(State(st): State<AppState>, auth: Auth) -> ApiResult<Json<TokenResponse>> {
+    let conn = st.db();
+    conn.execute(
+        "INSERT OR IGNORE INTO invites (token, splitter_id) VALUES (?1, ?2)",
+        params![new_token(), auth.splitter_id],
+    )?;
+    let token = conn.query_row(
+        "SELECT token FROM invites WHERE splitter_id = ?1",
+        [auth.splitter_id],
+        |r| r.get(0),
+    )?;
+    Ok(Json(TokenResponse { token }))
+}
+
 async fn logout(State(st): State<AppState>, auth: Auth) -> ApiResult<StatusCode> {
     st.db().execute("DELETE FROM sessions WHERE token = ?1", [auth.token])?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+fn check_password(password: &str) -> ApiResult<()> {
+    if password.chars().count() < 6 {
+        return Err(bad("Password must be at least 6 characters"));
+    }
+    Ok(())
+}
+
+async fn hash_password(password: String) -> ApiResult<String> {
+    tokio::task::spawn_blocking(move || {
+        Argon2::default().hash_password(password.as_bytes()).map(|h| h.to_string())
+    })
+    .await
+    .map_err(|_| bad("Hashing failed"))?
+    .map_err(|_| bad("Hashing failed"))
+}
+
+async fn verify_password(password: String, hash: String) -> bool {
+    tokio::task::spawn_blocking(move || {
+        PasswordHash::new(&hash)
+            .map(|h| Argon2::default().verify_password(password.as_bytes(), &h).is_ok())
+            .unwrap_or(false)
+    })
+    .await
+    .unwrap_or(false)
+}
+
+fn name_taken(e: rusqlite::Error) -> AppError {
+    match AppError::from(e) {
+        AppError(StatusCode::CONFLICT, _) => conflict("A splitter with that name already exists"),
+        other => other,
+    }
+}
+
+async fn rename_splitter(
+    State(st): State<AppState>,
+    auth: Auth,
+    Json(req): Json<NameInput>,
+) -> ApiResult<StatusCode> {
+    let name = clean_name(&req.name, "Splitter name")?;
+    st.db()
+        .execute("UPDATE splitters SET name = ?1 WHERE id = ?2", params![name, auth.splitter_id])
+        .map_err(name_taken)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct ChangePassword {
+    current_password: String,
+    new_password: String,
+}
+
+/// Change the password, log out every other session and revoke the invite
+/// link, so people who only knew the old password or link lose access.
+async fn change_password(
+    State(st): State<AppState>,
+    auth: Auth,
+    Json(req): Json<ChangePassword>,
+) -> ApiResult<StatusCode> {
+    check_password(&req.new_password)?;
+    let old_hash: String = st.db().query_row(
+        "SELECT password_hash FROM splitters WHERE id = ?1",
+        [auth.splitter_id],
+        |r| r.get(0),
+    )?;
+    if !verify_password(req.current_password, old_hash).await {
+        return Err(bad("Current password is wrong"));
+    }
+    let hash = hash_password(req.new_password).await?;
+    let mut conn = st.db();
+    let tx = conn.transaction()?;
+    tx.execute("UPDATE splitters SET password_hash = ?1 WHERE id = ?2", params![hash, auth.splitter_id])?;
+    tx.execute(
+        "DELETE FROM sessions WHERE splitter_id = ?1 AND token <> ?2",
+        params![auth.splitter_id, auth.token],
+    )?;
+    tx.execute("DELETE FROM invites WHERE splitter_id = ?1", [auth.splitter_id])?;
+    tx.commit()?;
     Ok(StatusCode::NO_CONTENT)
 }
 

@@ -254,11 +254,64 @@ function renderApp() {
     <div class="spread">
       <div><h1 style="margin:0;font-size:1.35rem">${esc(S.name)}</h1>
         <span class="muted small">Main currency ${esc(S.base_currency)} · ${S.persons.length} people · ${S.bills.length} bills</span></div>
-      <button onclick="logout()">Log out</button>
+      <div class="row"><button onclick="copyInvite(this)">Copy invite link</button><button onclick="splitterSettings()">Settings</button><button onclick="logout()">Log out</button></div>
     </div>
     <nav class="tabs">${TABS.map(([k, l]) => `<button class="${k === tab ? "active" : ""}" onclick="setTab('${k}')">${l}</button>`).join("")}</nav>
   </div></header>
   <main class="wrap">${warnings}${({ bills: viewBills, settle: viewSettle, people: viewPeople, payments: viewPayments, currencies: viewCurrencies }[tab] || viewBills)()}</main>`;
+}
+
+// -------------------------------------------------------------- invite link
+async function copyInvite(btn) {
+  try {
+    const link = `${location.origin}/#join=${(await api("GET", "/api/splitter/invite")).token}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      btn.textContent = "Copied!";
+      setTimeout(() => { btn.textContent = "Copy invite link"; }, 1500);
+    } catch {
+      prompt("Copy this link and share it with your group:", link);
+    }
+  } catch (ex) { alert(ex.message); }
+}
+
+// ---------------------------------------------------------- settings dialog
+function splitterSettings() {
+  openDialog(`
+    <h2>Splitter settings</h2>
+    <div id="rename-splitter">
+      <label>Splitter name</label>
+      <div class="row"><input class="grow" name="name" value="${esc(S.name)}" autocomplete="off"><button type="button" id="save-name">Rename</button></div>
+    </div>
+    <h3 style="margin-top:18px">Change password</h3>
+    <p class="muted small">Everyone else will be logged out and the invite link stops working. They need the new password or a new link to join again.</p>
+    <label>Current password</label><input name="current" type="password" autocomplete="current-password">
+    <label>New password</label><input name="password" type="password" minlength="6" autocomplete="new-password">
+    <label>Repeat new password</label><input name="password2" type="password" autocomplete="new-password">
+    <div class="error" id="dlg-error"></div>
+    <div class="dialog-actions">
+      <button type="button" onclick="closeDialog()">Close</button>
+      <button class="primary">Change password</button>
+    </div>`);
+  const form = $("#dlg-form");
+  const fail = ex => { $("#dlg-error").textContent = ex.message; };
+  $("#save-name").onclick = async () => {
+    try {
+      await api("PUT", "/api/splitter/name", { name: form.name.value });
+      closeDialog();
+      await refresh();
+    } catch (ex) { fail(ex); }
+  };
+  form.name.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); $("#save-name").click(); } };
+  form.onsubmit = async e => {
+    e.preventDefault();
+    if (form.password.value !== form.password2.value) return fail(new Error("Passwords don't match"));
+    try {
+      await api("PUT", "/api/splitter/password", { current_password: form.current.value, new_password: form.password.value });
+      closeDialog();
+      alert("Password changed. Share the new password with your group.");
+    } catch (ex) { fail(ex); }
+  };
 }
 
 // ---------------------------------------------------------------- bills tab
@@ -613,7 +666,23 @@ function openDialog(html) {
 function closeDialog() { $("#dlg").close(); }
 
 // --------------------------------------------------------------------- boot
-if (token) refresh().catch(() => logoutLocal()); else renderLanding();
+async function boot() {
+  const invite = new URLSearchParams(location.hash.slice(1)).get("join");
+  if (invite) {
+    history.replaceState(null, "", location.pathname + location.search);
+    token = null; // so a bad link's 401 doesn't log out an existing session
+    try {
+      token = (await api("POST", "/api/join", { invite })).token;
+      localStorage.setItem("splitter-token", token);
+    } catch (ex) {
+      token = localStorage.getItem("splitter-token");
+      if (!token) return renderLanding({ join: ex.message });
+      alert(ex.message);
+    }
+  }
+  if (token) refresh().catch(() => logoutLocal()); else renderLanding();
+}
+boot();
 </script>
 </body>
 </html>

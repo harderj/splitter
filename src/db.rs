@@ -15,6 +15,12 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- At most one invite link per splitter; opening it logs you in like the password.
+CREATE TABLE IF NOT EXISTS invites (
+    token       TEXT PRIMARY KEY,
+    splitter_id INTEGER NOT NULL UNIQUE REFERENCES splitters(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS persons (
     id          INTEGER PRIMARY KEY,
     splitter_id INTEGER NOT NULL REFERENCES splitters(id) ON DELETE CASCADE,
