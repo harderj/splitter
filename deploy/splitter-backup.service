@@ -1,0 +1,9 @@
+[Unit]
+Description=Back up the Splitter database
+
+[Service]
+Type=oneshot
+User=splitter
+Group=splitter
+UMask=0077
+ExecStart=/bin/sh -c 'mkdir -p /var/lib/splitter/backups && sqlite3 /var/lib/splitter/splitter.db ".backup /var/lib/splitter/backups/splitter-$(date +%%F).db" && find /var/lib/splitter/backups -name "splitter-*.db" -mtime +30 -delete'

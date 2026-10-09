@@ -1,11 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
 use argon2::Argon2;
 use argon2::password_hash::phc::PasswordHash;
 use argon2::password_hash::{PasswordHasher, PasswordVerifier};
-use axum::extract::{FromRequestParts, Path, State};
+use axum::extract::{FromRequestParts, Path, Request, State};
 use axum::http::{StatusCode, header, request::Parts};
+use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
@@ -20,11 +22,12 @@ const INDEX_HTML: &str = include_str!("../static/index.html");
 #[derive(Clone)]
 pub struct AppState {
     db: Arc<Mutex<Connection>>,
+    attempts: Arc<Mutex<HashMap<String, (u32, Instant)>>>,
 }
 
 impl AppState {
     pub fn new(conn: Connection) -> Self {
-        Self { db: Arc::new(Mutex::new(conn)) }
+        Self { db: Arc::new(Mutex::new(conn)), attempts: Arc::default() }
     }
 
     fn db(&self) -> MutexGuard<'_, Connection> {
@@ -33,16 +36,21 @@ impl AppState {
 }
 
 pub fn router(state: AppState) -> Router {
-    Router::new()
-        .route("/", get(|| async { Html(INDEX_HTML) }))
+    // Routes that check passwords or create accounts; rate limited per client IP.
+    let limited = Router::new()
         .route("/api/splitters", post(create_splitter))
         .route("/api/login", post(login))
         .route("/api/join", post(join))
+        .route("/api/splitter/password", put(change_password))
+        .route_layer(middleware::from_fn_with_state(state.clone(), rate_limit));
+
+    Router::new()
+        .route("/", get(|| async { Html(INDEX_HTML) }))
+        .merge(limited)
         .route("/api/logout", post(logout))
         .route("/api/state", get(get_state))
         .route("/api/settings", put(update_settings))
         .route("/api/splitter/name", put(rename_splitter))
-        .route("/api/splitter/password", put(change_password))
         .route("/api/splitter/invite", get(get_invite))
         .route("/api/persons", post(add_person))
         .route("/api/persons/{id}", put(rename_person).delete(delete_person))
@@ -102,6 +110,43 @@ fn not_found() -> AppError {
 
 fn unauthorized(msg: &str) -> AppError {
     AppError(StatusCode::UNAUTHORIZED, msg.into())
+}
+
+// ---------------------------------------------------------------------------
+// Rate limiting
+
+const RATE_LIMIT_MAX: u32 = 10;
+const RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
+
+/// Allows `RATE_LIMIT_MAX` requests per `RATE_LIMIT_WINDOW` per client. The client
+/// is identified by the `X-Forwarded-For` header set by the reverse proxy, so the
+/// server must only be reachable through that proxy.
+async fn rate_limit(State(st): State<AppState>, req: Request, next: Next) -> Response {
+    let client = req
+        .headers()
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .unwrap_or("unknown")
+        .trim()
+        .to_string();
+    let now = Instant::now();
+    {
+        let mut attempts = st.attempts.lock().unwrap_or_else(|e| e.into_inner());
+        if attempts.len() > 10_000 {
+            attempts.retain(|_, (_, start)| now.duration_since(*start) < RATE_LIMIT_WINDOW);
+        }
+        let entry = attempts.entry(client).or_insert((0, now));
+        if now.duration_since(entry.1) >= RATE_LIMIT_WINDOW {
+            *entry = (0, now);
+        }
+        entry.0 += 1;
+        if entry.0 > RATE_LIMIT_MAX {
+            return AppError(StatusCode::TOO_MANY_REQUESTS, "Too many attempts, please wait a minute".into())
+                .into_response();
+        }
+    }
+    next.run(req).await
 }
 
 // ---------------------------------------------------------------------------

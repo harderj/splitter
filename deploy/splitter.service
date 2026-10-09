@@ -1,0 +1,42 @@
+[Unit]
+Description=Splitter web app
+After=network.target
+
+[Service]
+User=splitter
+Group=splitter
+ExecStart=/opt/splitter/splitter
+Environment=SPLITTER_ADDR=127.0.0.1:3000
+Environment=SPLITTER_DB=/var/lib/splitter/splitter.db
+StateDirectory=splitter
+WorkingDirectory=/var/lib/splitter
+Restart=on-failure
+RestartSec=2
+
+# Sandboxing: the app can only write its own state directory.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
